@@ -6,18 +6,23 @@ HellHall-rs is a Rust based implementation of HellHall that allows for indirect 
 
 HellHall-rs doesn't work the same way that the initial HellHall code does, in which structs are created, and then sent to assembly to move into the correct variables. Instead, HellHall-rs uses exported statics which can be accessed by the assembly in order to perform syscalls. These statics are referenced directly by the assembly code, eliminating the need for one of the original HellHall functions written in MASM.
 
-These functions to setup the syscalls and perform transmutations of the HellHall assembly function have been added as macros to allow ease-of-use. These macros are called syscall_setup and convert_to_type, and these macros are the only items that need to be imported for the execution to work properly.
+These functions to setup the syscalls and perform transmutations of the HellHall assembly function have been added as macros to allow ease-of-use. These macros are called syscall_setup and convert_to_type, and these macros are the only items that need to be imported for the execution to work properly. The macros are used as follows:
+1) Pass a pointer to the syscall_setup macro to change the SSNNUMBER and JMPINSTRUCT values to the correct SSN and a pointer to a jmp instruction in NTDLL respectively.
+2) Use convert_to_type to convert the HellHall function to the correct function type (the same type as your syscall)
+3) Execute the syscall as normal.
+
+Below is an example using NtCreateThreadEx with the standard Windows LibraryLoader functions. This can can converted to use custom GetProcAddress/LoadLibraryA/GetModuleHandleA functions.
 
 ```
 use core::ptr::null;
 use hellhall_rs::{convert_to_type, syscall_setup};
-use windows::{core::PCSTR, Win32::{Foundation::HANDLE, System::{LibraryLoader::{GetProcAddress, LoadLibraryA}, Threading::{WaitForSingleObject, INFINITE}}}};
+use windows::{core::PCSTR, Win32::{Foundation::HANDLE, System::{LibraryLoader::{GetModuleHandleA, GetProcAddress}, Threading::{WaitForSingleObject, INFINITE}}}};
 
 type NtCreateThreadExType = extern "C" fn(handle: *mut HANDLE, accessmask: i32, objectattributes: *const u8, processhandle: isize, lpstartaddress: *const u8, lpstartparameters: *const u8, flags: u64, stackzerobits: usize, sizeofstackcommit: usize, sizeofstackreserve: usize, lpbytesbuffer: *const u8);
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
-        let ntdllptr = LoadLibraryA(PCSTR("ntdll.dll\0".as_ptr()))?;
+        let ntdllptr = GetModuleHandleA(PCSTR("ntdll.dll\0".as_ptr()))?;
         let ntctexptr = GetProcAddress(ntdllptr, PCSTR("NtCreateThreadEx\0".as_ptr()));
         syscall_setup!(ntctexptr);
         let ntct: NtCreateThreadExType = convert_to_type!();
