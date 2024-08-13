@@ -6,15 +6,11 @@ HellHall-rs is a Rust based implementation of HellHall that allows for indirect 
 
 HellHall-rs doesn't work the same way that the initial HellHall code does, in which structs are created, and then sent to assembly to move into the correct variables. Instead, HellHall-rs uses exported statics which can be accessed by the assembly in order to perform syscalls. These statics are referenced directly by the assembly code, eliminating the need for one of the original HellHall functions written in MASM.
 
-
-The find_ssn function can be used to update these variables. Just pass a pointer that mimics the functionality of GetProcAddress to the syscall you are looking to use, and then use the addr_of_mut! macro of the declared statics. The SSN function will then update the statics with the correct ssn number and a pointer to a syscall instruct in ntdll that isn't hooked, and you can use the HellHall function.
-
-To use the HellHall function, declare the type of your variable, cast to a function pointer, and pass the pointer through transmute. You can then use this function as if you're directly calling it. An example using NtCreateThreadEx is below:
+These functions to setup the syscalls and perform transmutations of the HellHall assembly function have been added as macros to allow ease-of-use. These macros are called syscall_setup and convert_to_type, and these macros are the only items that need to be imported for the execution to work properly.
 
 ```
-use core::{ptr::{addr_of_mut, null}, mem::transmute};
-
-use hellhall_rs::{find_ssn, HellHall, SSNNUMBER, JMPINSTRUCT};
+use core::ptr::null;
+use hellhall_rs::{convert_to_type, syscall_setup};
 use windows::{core::PCSTR, Win32::{Foundation::HANDLE, System::{LibraryLoader::{GetProcAddress, LoadLibraryA}, Threading::{WaitForSingleObject, INFINITE}}}};
 
 type NtCreateThreadExType = extern "C" fn(handle: *mut HANDLE, accessmask: i32, objectattributes: *const u8, processhandle: isize, lpstartaddress: *const u8, lpstartparameters: *const u8, flags: u64, stackzerobits: usize, sizeofstackcommit: usize, sizeofstackreserve: usize, lpbytesbuffer: *const u8);
@@ -23,8 +19,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
         let ntdllptr = LoadLibraryA(PCSTR("ntdll.dll\0".as_ptr()))?;
         let ntctexptr = GetProcAddress(ntdllptr, PCSTR("NtCreateThreadEx\0".as_ptr()));
-        find_ssn(transmute(ntctexptr), addr_of_mut!(SSNNUMBER), addr_of_mut!(JMPINSTRUCT));
-        let ntct: NtCreateThreadExType = transmute(HellHall as *const ());
+        syscall_setup!(ntctexptr);
+        let ntct: NtCreateThreadExType = convert_to_type!();
         let mut cthandle = HANDLE::default();
         ntct(&mut cthandle, 0x1FFFFF, null(), -1, (threadedfunction as *const ()).cast(), null(), 0, 0, 0, 0, null());
         WaitForSingleObject(cthandle, INFINITE);

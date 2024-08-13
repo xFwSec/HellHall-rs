@@ -10,6 +10,22 @@ extern "C" {
     pub fn HellHall();
 }
 
+#[macro_export]
+macro_rules! syscall_setup {
+    ($x:expr) => {
+        {
+            $crate::find_ssn(core::mem::transmute($x), core::ptr::addr_of_mut!($crate::SSNNUMBER), core::ptr::addr_of_mut!($crate::JMPINSTRUCT));
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! convert_to_type {
+    () => {
+        core::mem::transmute($crate::HellHall as *const ())
+    };
+}
+
 pub unsafe fn find_ssn(addressptr: *const u8, ssnnumber: *mut u32, jmpinstruct: *mut *const u8) -> u32 {
     // Create the iterate value
     let mut iterate: usize = 0;
