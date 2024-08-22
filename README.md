@@ -6,35 +6,41 @@ HellHall-rs is a Rust based implementation of HellHall that allows for indirect 
 
 HellHall-rs doesn't work the same way that the initial HellHall code does, in which structs are created, and then sent to assembly to move into the correct variables. Instead, HellHall-rs uses exported statics which can be accessed by the assembly in order to perform syscalls. These statics are referenced directly by the assembly code, eliminating the need for one of the original HellHall functions written in MASM.
 
-These functions to setup the syscalls and perform transmutations of the HellHall assembly function have been added as macros to allow ease-of-use. These macros are called syscall_setup and convert_to_type, and these macros are the only items that need to be imported for the execution to work properly. The macros are used as follows:
-1) Pass a pointer to the syscall_setup macro to change the SSNNUMBER and JMPINSTRUCT values to the correct SSN and a pointer to a jmp instruction in NTDLL respectively.
-2) Use convert_to_type to convert the HellHall function to the correct function type (the same type as your syscall)
-3) Execute the syscall as normal.
+This crate has been designed to allowed indirect syscalls in a single use of a macro. The current setup is using GetModuleHandle/GetProcAddress from the windows-sys crate to perform resolutions. To add your own in, you can modify the resolvers in resolvers.rs, just make sure you keep the the return types the same. You can add in API hashed versions fairly easily as the macro is just expected an expression to use with the proc resolver.
 
-Below is an example using NtCreateThreadEx with the standard Windows LibraryLoader functions. This can can converted to use custom GetProcAddress/LoadLibraryA/GetModuleHandleA functions.
+Below is an example using NtCreateThreadEx. The first variable passed to the macro is the idenitifer used by the procresolver function, and the others follow the syntax type: variable which allows to type used to pass to HellHall to by dynamically created and then populated with the correct functions.
 
 ```
 use core::ptr::null;
-use hellhall_rs::{convert_to_type, syscall_setup};
-use windows::{core::PCSTR, Win32::{Foundation::HANDLE, System::{LibraryLoader::{GetModuleHandleA, GetProcAddress}, Threading::{WaitForSingleObject, INFINITE}}}};
-
-type NtCreateThreadExType = extern "C" fn(handle: *mut HANDLE, accessmask: i32, objectattributes: *const u8, processhandle: isize, lpstartaddress: *const u8, lpstartparameters: *const u8, flags: u64, stackzerobits: usize, sizeofstackcommit: usize, sizeofstackreserve: usize, lpbytesbuffer: *const u8);
+use hellhall_rs::perform_syscall;
+use windows::Win32::{Foundation::HANDLE, System::Threading::{WaitForSingleObject, INFINITE}};
+use windows_sys::s;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     unsafe {
-        let ntdllptr = GetModuleHandleA(PCSTR("ntdll.dll\0".as_ptr()))?;
-        let ntctexptr = GetProcAddress(ntdllptr, PCSTR("NtCreateThreadEx\0".as_ptr()));
-        syscall_setup!(ntctexptr);
-        let ntct: NtCreateThreadExType = convert_to_type!();
         let mut cthandle = HANDLE::default();
-        ntct(&mut cthandle, 0x1FFFFF, null(), -1, (threadedfunction as *const ()).cast(), null(), 0, 0, 0, 0, null());
+        perform_syscall!(
+            s!("NtCreateThreadEx"), 
+            *mut HANDLE: &mut cthandle, 
+            i32: 0x1FFFFF, 
+            *const u8: null(), 
+            isize: -1, 
+            *const (): threadedfunction as *const (), 
+            *const u8: null(), 
+            u64: 0, 
+            usize: 0, 
+            usize: 0, 
+            usize: 0, 
+            *const u8: null()
+            );
         WaitForSingleObject(cthandle, INFINITE);
     }
     Ok(())
 }
 
-unsafe fn threadedfunction() {
-    println!("Testing");
+unsafe extern "system" fn threadedfunction(_lpthreadparameter: *mut u8) -> u32 {
+    println!("Thread created successfully");
+    0
 }
 ```
 

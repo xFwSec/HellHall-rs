@@ -1,28 +1,30 @@
+#![allow(unsafe_code)]
+#![no_std]
 use core::arch::global_asm;
+pub mod resolvers;
+
 global_asm!(include_str!(".\\hellhall.s"));
 
 #[no_mangle]
 pub static mut SSNNUMBER: u32 = 0;
 #[no_mangle]
 pub static mut JMPINSTRUCT: *const u8 = core::ptr::null();
+pub static mut NTDLLPTR: *mut u8 = core::ptr::null_mut();
 
 extern "C" {
     pub fn HellHall();
 }
 
 #[macro_export]
-macro_rules! syscall_setup {
-    ($x:expr) => {
-        {
-            $crate::find_ssn(core::mem::transmute($x), core::ptr::addr_of_mut!($crate::SSNNUMBER), core::ptr::addr_of_mut!($crate::JMPINSTRUCT));
-        }
-    };
-}
-
-#[macro_export]
-macro_rules! convert_to_type {
-    () => {
-        core::mem::transmute($crate::HellHall as *const ())
+macro_rules! perform_syscall {
+    ($x:expr, $($y:ty:$z:expr),*) => {
+        if $crate::NTDLLPTR.is_null() {
+            $crate::NTDLLPTR = $crate::resolvers::ntdllresolver();
+        };
+        let addressptr = $crate::resolvers::procresolver($crate::NTDLLPTR, $x);
+        $crate::find_ssn(core::mem::transmute(addressptr), core::ptr::addr_of_mut!($crate::SSNNUMBER), core::ptr::addr_of_mut!($crate::JMPINSTRUCT));
+        let exec: unsafe extern "C" fn($($y),*) = core::mem::transmute($crate::HellHall as *const ());
+        exec($($z),*)
     };
 }
 
